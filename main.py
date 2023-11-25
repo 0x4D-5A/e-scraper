@@ -28,23 +28,23 @@ def rand_int(min_:int, max_:int):
 def get_headers():
   # Try to get the most white-listed user-agent
   
-  r_platform = rand_int(1, 3)
+  random_platform = rand_int(1, 3)
   is_mobile = False
   
-  if r_platform == 1:
+  if random_platform == 1:
     platform = 'Windows'
-  elif r_platform == 2:
+  elif random_platform == 2:
     platform = 'macOS'
   else:
     platform = 'iOS'
     is_mobile = True
   
   if platform == 'Windows':
-    r_ver = rand_int(1, 3)
-    if r_ver == 1:    #8.1
+    rand_win_vers = rand_int(1, 3)
+    if rand_win_vers == 1:    #8.1
       win_ver = '6.3'
       platform_version = '0.3.0'
-    elif r_ver == 2:   #10
+    elif rand_win_vers == 2:   #10
       win_ver = '10.0'
       r_major = rand_int(1, 3)
       if r_major == 1:
@@ -54,14 +54,14 @@ def get_headers():
       elif r_major == 3:
         platform_version = '10.0.0' #Windows 10 2004 | 20H2 | 21H1
         
-    elif r_ver == 3:   #11
+    elif rand_win_vers == 3:   #11
       win_ver = '10.0' 
       platform_version = '15.0.0'
     else:
       win_ver = '10.0' #11
       platform_version = '15.0.0'
     
-    chrome_agent = f"Mozilla/5.0 (Windows NT {win_ver}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+    chrome_agent = f"Mozilla/5.0 (Windows NT {win_ver}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
   elif platform == 'macOS':
     r_macos = rand_int(1, 4)
     if r_macos == 1:
@@ -85,7 +85,7 @@ def get_headers():
       macos_version = '10_15_7'
       platform_version = '12.5.1'
       
-    chrome_agent = f"Mozilla/5.0 (Macintosh; Intel Mac OS X {macos_version}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+    chrome_agent = f"Mozilla/5.0 (Macintosh; Intel Mac OS X {macos_version}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
   else:
     r_device = rand_int(1, 2)
     if r_device == 1:
@@ -105,7 +105,7 @@ def get_headers():
     else:
       ios_version = '16_1'
     
-    chrome_agent = f"Mozilla/5.0 ({ios_device} OS {ios_version} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/109.0.5304.101 Mobile/15E148 Safari/604.1"
+    chrome_agent = f"Mozilla/5.0 ({ios_device} OS {ios_version} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/119.0.6045.109 Mobile/15E148 Safari/604.1"
 
   if not is_mobile:
     c_headers = {'Upgrade-Insecure-Requests': '1',
@@ -126,12 +126,12 @@ def get_headers():
     'Sec-Fetch-Mode': 'navigate',
     'Sec-Fetch-User': '?1',
     'Sec-Fetch-Dest': 'document',
-    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Encoding': 'gzip, deflate',
     'Accept-Language': 'en-US,en;q=0.9'}
   else:
     c_headers = {'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Encoding': 'gzip, deflate',
     'User-Agent': chrome_agent}
     
   return c_headers
@@ -146,7 +146,7 @@ def do_get(session, get_url:str, proxy:dict, headers:dict):
      
      if resp.status_code == 429: #Too Many Requests
        retry_after = int(resp.headers.get('Retry-After'))
-       print('[-] Retry-After: ' + str(retry_after) + " " + get_url)
+       print(f'[-] Retry-After: {str(retry_after)} - {get_url}')
        sleep(retry_after + 10)
        resp = session.get(get_url, verify=False, allow_redirects=True, proxies=proxy)
      
@@ -205,30 +205,43 @@ def get_page_links(base_url:str, domain:str, resp, disallowed:tuple, regex_href)
   
   return list(links)
 
-def extract_emails(file, regex_emails, text:str, domain_emails:set):
-  current_unique_emails = set(regex_emails.findall(text))
+def extract_emails(file, regex_emails, text:str, domain_emails:set, tlds):
+  all_emails = set(regex_emails.findall(text))
+  parsend_emails = set()
   
-  for email in current_unique_emails:
+  for email in all_emails:
+    email = email.lower()
     if email not in domain_emails:
+      if tlds:
+        last_dot = email.rfind('.')
+        
+        if not last_dot:
+          continue
+          
+        tld = email[last_dot + 1:]
+        if tld not in tlds:
+          continue
+        
       file.write(email + '\n')
+      parsend_emails.add(email)
   
   file.flush()
   
-  return current_unique_emails
+  return parsend_emails
           
-def parse_domain(domain:str, regex_emails, regex_robots, regex_href, headers:dict):
+def parse_domain(domain:str, regex_emails, regex_robots, regex_href, headers:dict, tlds):
 
   session = Session()
   
   #Firstly try to crawl via HTTP, as it's faster
-  base_url = 'http://' + domain
+  base_url = f'http://{domain}'
   main_resp = do_get(session, base_url, None, headers)
   
   if main_resp:
     if main_resp.url.startswith('https://'):
-      base_url = 'https://' + domain
+      base_url = f'https://{domain}'
   else:
-    base_url = 'https://' + domain
+    base_url = f'https://{domain}'
     main_resp = do_get(session, base_url, None, headers)
 
   if main_resp is False:
@@ -266,7 +279,7 @@ def parse_domain(domain:str, regex_emails, regex_robots, regex_href, headers:dic
       if link in links_visited:
         continue
     
-      print('[+] ' + link)
+      print(f'[+] {link}')
       resp = do_get(session, link, None, headers)
     
       links_visited.add(link)
@@ -276,25 +289,67 @@ def parse_domain(domain:str, regex_emails, regex_robots, regex_href, headers:dic
       
         if new_list:
           links.extend(new_list)
-          domain_emails.update(extract_emails(f, regex_emails, resp.text, domain_emails))
+          domain_emails.update(extract_emails(f, regex_emails, resp.text, domain_emails, tlds))
         else:
           #If page has no href links and it's an html page then search in it too.
           content_type = resp.headers.get('Content-Type')
           if content_type and content_type.startswith('text/html'):
-            domain_emails.update(extract_emails(f, regex_emails, resp.text, domain_emails))
+            domain_emails.update(extract_emails(f, regex_emails, resp.text, domain_emails, tlds))
     
   else:
     #If main page has no href links and it's an html page then search in it too.
     content_type = main_resp.headers.get('Content-Type')
     if content_type and content_type.startswith('text/html'):
-      domain_emails.update(extract_emails(f, regex_emails, main_resp.text, domain_emails))
+      domain_emails.update(extract_emails(f, regex_emails, main_resp.text, domain_emails, tlds))
     
   f.close()
   print(f'[+] Extracted {len(domain_emails)} emails from {domain}')
   
   return True
 
-
+def get_iana_tlds(regex_href):
+  
+  session = Session()
+  
+  iana_path = '/domains/root/db'
+  resp = do_get(session, f'http://www.iana.org{iana_path}', None, get_headers())
+  
+  if not resp:
+    return False
+  
+  regex_links = regex_href.findall(resp.text)
+  iana_len = len(iana_path) + 1
+  
+  if not regex_links:
+    return False
+  
+  tlds = set()
+  
+  for href in regex_links:
+    
+    href = href[1]
+    if href == "" or href is None or href == '#':
+      continue
+    
+    if not href.startswith(iana_path + '/'):
+      continue
+    
+    tld_html = href[iana_len:]
+    
+    # just to be sure
+    if not tld_html.endswith('.html'):
+      continue
+    
+    # 5 = len('.html')
+    tld = tld_html[:-5]
+    
+    tlds.add(tld)
+  
+  if tlds:
+    return tlds
+  
+  return False
+  
 def main():
   
   try:
@@ -326,8 +381,10 @@ def main():
   regex_robots = regex_compile("^Disallow[ ]*:(.*)", regex_MULTILINE)
   regex_href = regex_compile("<a\\s+(?:[^>]*?\\s+)?href=([\"'])(.*?)\\1")
   
+  tlds = get_iana_tlds(regex_href)
+  
   for domain in unique_domains:
-    parse_domain(domain, regex_pattern, regex_robots, regex_href, get_headers())
+    parse_domain(domain, regex_pattern, regex_robots, regex_href, get_headers(), tlds)
   
   return
   
